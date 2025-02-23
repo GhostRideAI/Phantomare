@@ -1,0 +1,34 @@
+{
+	"name": "Phantomare",
+	"remoteUser": "docker-user",
+	"build": {
+		"dockerfile": "${localWorkspaceFolder}/environment/Dockerfile",
+		"context": "${localWorkspaceFolder}/environment"
+	},
+	"containerEnv": {
+		"HOST_UID": "${localEnv:UID}",
+		"HOST_GID": "${localEnv:GID}",
+		"HOST_USERNAME": "${localEnv:USER}"
+	},
+	"runArgs": [
+		"--gpus",
+		"all",
+		"--shm-size",
+		"8G",
+		"--name",
+		"Phantomare",
+		"--network",
+		"host",
+		"--privileged"
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-toolsai.jupyter"
+			]
+		}
+	},
+	"workspaceMount": "source=${localWorkspaceFolder},target=/Phantomare,type=bind",
+	"workspaceFolder": "/Phantomare"
+}
