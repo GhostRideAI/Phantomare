@@ -113,7 +113,7 @@ runner:
   ptl_trainer_args:
     max_steps: 1.0e+8
     max_epochs: null
-    precision: '16-mixed'
+    precision: 16-mixed
     log_every_n_steps: 100
     benchmark: true
     # Callbacks to use during training. (https://lightning.ai/docs/pytorch/stable/api_references.html#callbacks)

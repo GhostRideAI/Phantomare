@@ -10,11 +10,12 @@
 		"HOST_GID": "${localEnv:GID}",
 		"HOST_USERNAME": "${localEnv:USER}"
 	},
+	"hostRequirements": {
+		"gpu": "optional"
+	},
 	"runArgs": [
-		"--gpus",
-		"all",
-		"--shm-size",
-		"8G",
+		"--ipc",
+		"host",
 		"--name",
 		"Phantomare",
 		"--network",

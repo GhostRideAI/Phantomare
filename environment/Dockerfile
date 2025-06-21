@@ -32,6 +32,8 @@ RUN apt install git -y
 USER docker-user
 RUN conda create --name Phantomare python=3.11
 COPY requirements.txt /home/docker-user/
+# Work around for box2d-py error
+RUN conda run -n Phantomare pip install swig==4.2.1
 RUN conda run -n Phantomare pip install -r ~/requirements.txt
 RUN echo 'conda activate Phantomare' >> ~/.bashrc
 
