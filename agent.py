@@ -57,19 +57,21 @@ class Environment:
 
         def observation(self, observations: dict[
             str, NDArray] | NDArray) -> Tensor:
-            processed = {}
+            processed = TensorDict()
             if not isinstance(observations, dict):
                 observations = {'image': observations}
             for name, obs in observations.items():
                 if obs.ndim > 1:
-                    obs = Image.fromarray(obs)
-                    obs = obs.resize((64, 64))
+                    if obs.shape[-1] == 1:
+                        obs = Image.fromarray(obs[...,0])
+                    else:
+                        obs = Image.fromarray(obs)
                     obs = Utils.img2ten(obs).unsqueeze(0)
                 else:
                     obs = torch.tensor([obs], dtype=torch.float32)
                 processed[name] = obs
-            observations = TensorDict(processed, [1])
-            return observations
+            processed.auto_batch_size_(1)
+            return processed 
 
     class ActionProcessor(gym.ActionWrapper):
 
