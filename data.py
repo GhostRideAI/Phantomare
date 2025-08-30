@@ -257,10 +257,6 @@ class DataModule(ptl.LightningDataModule):
                 init_fill = max(init_fill - len(self.replay_buffer), 0)
                 for _ in tqdm(range(init_fill+1), desc='Prefilling Replay Buffer'):
                     self.data_collector.step()
-            elif isinstance(self.data_collector, ConcurrentDataCollector):
-                print('Prefilling Replay Buffer...')
-                while len(self.replay_buffer) < self.cfg.batch_size:
-                    time.sleep(1)
 
     def teardown(self, stage: str) -> None:
         if (hasattr(self, 'data_collector') and
