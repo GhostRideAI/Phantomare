@@ -244,9 +244,9 @@ class PruningRunner(Runner):
 def main() -> None:
     # CLI
     parser = argparse.ArgumentParser(description='Run training, etc.')
-    parser.add_argument('--config', type=str, required=True, help='Path to .yaml configuration file.')
-    parser.add_argument('--routine', type=str, required=True, help='What routine to run. (Options: train)')
-    parser.add_argument('--debug', action='store_true', help='Flag to run in debug mode.')
+    parser.add_argument('-cfg', type=str, required=True, help='Path to .yaml configuration file.')
+    parser.add_argument('-routine', type=str, default='train', help='What routine to run. (Options: train)')
+    parser.add_argument('-debug', action='store_true', help='Flag to run in debug mode.')
     args = parser.parse_args()
 
     setattr(Config, 'debug', args.debug)
