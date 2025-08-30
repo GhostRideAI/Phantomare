@@ -6,6 +6,7 @@ import numpy as np
 from tensordict import TensorDict
 from distributions import *
 from utils import Config, Utils
+import operator
 
 #####################################################################
 #   General Neural Network Modules
@@ -63,7 +64,7 @@ class Encoder2D(nn.Module):
 
     def __init__(self, in_dim: int, hidden_dim: int,
                  Activation: nn.Module, n_layers: int=4,
-                 residual: bool=False) -> None:
+                 residual: bool=False, **kwargs) -> None:
         super().__init__()
         self.n_layers = n_layers
         out_dim = hidden_dim
@@ -117,22 +118,23 @@ class Encoder2D(nn.Module):
             y = self.final_act(x + skip)
             return y
 
-
 class Decoder2D(nn.Module):
     
     def __init__(self, in_dim: int, out_dim: int,
                  hidden_dim: int, HxActivation: nn.Module,
-                 OutActivation: nn.Module, n_layers: int=4,
-                 out_dist: Distribution=None, residual: bool=False) -> None:
+                 OutActivation: nn.Module, output_shape: tuple[int],
+                 n_layers: int=4, out_dist: Distribution=None, residual: bool=False) -> None:
         super().__init__()
         self.n_layers = n_layers
         self.layers = nn.Sequential()
         final_out_dim = out_dim
-        in_featmap_dim = 4 #HARDCODE
-        out_dim = 2**(n_layers-1) * hidden_dim * (in_featmap_dim**2)
+        out_h, out_w = output_shape
+        in_featmap_width = out_w//16
+        in_featmap_height = out_h//16
+        out_dim = 2**(n_layers-1) * hidden_dim * in_featmap_width * in_featmap_height
         self.layers.add_module('linear1', MLP(in_dim, 1, None, out_dim,
                                               None, HxActivation, True))
-        self.layers.add_module('unflatten1', nn.Unflatten(-1, (-1, in_featmap_dim, in_featmap_dim)))
+        self.layers.add_module('unflatten1', nn.Unflatten(-1, (-1, in_featmap_height, in_featmap_width)))
         for i in range(n_layers):
             if i+1 < n_layers:
                 in_dim = 2**(n_layers - i - 1) * hidden_dim 
@@ -240,9 +242,10 @@ class WorldModel(nn.Module):
             network_type = next(iter(spec.to_dict().keys()))
             encoder_args = {}
             if network_type == 'networks.Encoder2D':
+                input_h, input_w = next(iter(spec.to_dict().values())).input_shape
                 encoder_args['hidden_dim'] = cnn_dim
                 encoder_args['Activation'] = Act
-                encoded_dim += (2**3) * cnn_dim * 4 * 4 #HARDCODE
+                encoded_dim += (2**3) * cnn_dim * input_h//16 * input_w//16
             elif network_type == 'networks.MLP':
                 encoder_args['n_layers'] = 3
                 encoder_args['hx_dim'] = hidden_dim
