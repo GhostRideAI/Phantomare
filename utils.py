@@ -26,8 +26,8 @@ class Utils:
     ten2img = tv.transforms.ToPILImage()
     img2ten = tv.transforms.PILToTensor()
     totensor = tv.transforms.ToTensor()
-    def minmax_scale(t: Tensor) -> Tensor:
 
+    def minmax_scale(t: Tensor) -> Tensor:
         return (t - t.min())/(t.max() - t.min())
 
     def symlog(x: Tensor) -> Tensor:
