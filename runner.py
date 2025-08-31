@@ -10,7 +10,6 @@ from pytorch_lightning.loggers import CSVLogger
 from ray.train.lightning import prepare_trainer
 from ray.train.torch import TorchTrainer
 from ray import tune
-import torch_pruning as tp
 from data import DataModule
 from training import LitModule
 from utils import Config
@@ -185,62 +184,6 @@ class RayRunner:
         runner = Runner(cfg, _using_ray=True)
         runner.execute()
 
-class PruningRunner(Runner):
-    """
-    An extension of the Runner class to support network pruning via TorchPruning.
-    (https://github.com/VainF/Torch-Pruning)
-    """
-    def __init__(self, global_cfg: Config, _using_ray: bool = False) -> None:
-        self._og_cfg = copy.deepcopy(global_cfg)
-        super().__init__(global_cfg, _using_ray)
-
-    def _setup(self) -> None:
-        super()._setup_data_module()
-        super()._setup_lit_module(save_hparams=False)
-        super()._setup_ptl_trainer()
-        self._setup_pruner()
-
-    def _setup_pruner(self) -> None:
-        ignored_layers = self._lit_module.net.backbone.out_layers
-        self._example_input = {'x': self._lit_module.example_input_array['video'].flatten(0,1)}
-        additional_args = {'model': self._lit_module.net.backbone,
-                           'example_inputs': self._example_input,
-                           'ignored_layers': ignored_layers}
-        self._pruner = self.cfg.pruner.create_instance(additional_args)
- 
-    def execute(self, routine: str = 'train') -> None:
-        _, start_nparams = tp.utils.count_ops_and_params(
-            self._lit_module.net.backbone,
-            self._example_input)
-        for i in range(self._pruner.iterative_steps):
-            _, nparams = tp.utils.count_ops_and_params(
-                self._lit_module.net.backbone,
-                self._example_input)
-            print(f' {(1 - (nparams/start_nparams)):.2%} Pruned '.center(70, '*'))
-            super().execute(routine)
-            if i < (self._pruner.iterative_steps - 1):
-                # Perform pruning
-                self._pruner.step()
-                # Calculate new number of parameters
-                _, nparams = tp.utils.count_ops_and_params(
-                    self._lit_module.net.backbone,
-                    self._example_input)
-                # Calculate pruned amount
-                pruned_amt = f'{(1 - (nparams/start_nparams)):.2%}-pruned'
-                # Override experiment directory for new pruned version
-                self._override_exp_dir = self._log_dir
-                self._override_exp_dir.version = (
-                    f'{self._override_exp_dir.version.split("/")[0]}/{pruned_amt}')
-                # Load a new copy of the original config
-                global_cfg = copy.deepcopy(self._og_cfg)
-                self.global_cfg = global_cfg
-                self.cfg = global_cfg.runner
-                self.lm_cfg = global_cfg.lit_module
-                self.dm_cfg = global_cfg.data_module
-                # Re-setup data module & PTL trainer
-                super()._setup_data_module()
-                super()._setup_ptl_trainer()
-
 def main() -> None:
     # CLI
     parser = argparse.ArgumentParser(description='Run training, etc.')
@@ -250,7 +193,7 @@ def main() -> None:
     args = parser.parse_args()
 
     setattr(Config, 'debug', args.debug)
-    cfg = Config.from_yaml(args.config)
+    cfg = Config.from_yaml(args.cfg)
     seed = cfg.runner.rng_seed
     random.seed(seed)
     np.random.seed(seed)
@@ -261,11 +204,6 @@ def main() -> None:
             'ray_trainer_args must be defined in config '
             'to user runner type == \'ray\'')
         runner = RayRunner(cfg)
-    elif (cfg.runner.has('type') and cfg.runner.type == 'prune'):
-        assert cfg.runner.has('pruner'), (
-            'pruner must be defined in config '
-            'to user runner type == \'prune\'')
-        runner = PruningRunner(cfg)
     else:
         runner = Runner(cfg)
     runner.execute(args.routine)
