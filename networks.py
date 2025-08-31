@@ -16,9 +16,9 @@ class MLP(nn.Module):
 
     def __init__(self, in_dim: int, n_layers: int, 
                  hx_dim: int, out_dim: int, HxActivation: nn.Module,
-                 OutActivation: nn.Module = None, out_norm: bool = False,
-                 out_dist: nn.Module = None, preprocessing: nn.Module = None,
-                 postprocessing: nn.Module = None) -> None:
+                 OutActivation: nn.Module=None, out_norm: bool=False,
+                 out_dist: nn.Module=None, preprocessing: nn.Module=None,
+                 postprocessing: nn.Module=None) -> None:
         super().__init__()
         self.n_layers = n_layers
         self.layers = nn.Sequential()
@@ -47,7 +47,6 @@ class MLP(nn.Module):
         y = self.layers(x)
         return y
 
-
 class ChannelLayerNorm(nn.LayerNorm):
 
     def __init__(self, *args, **kwargs) -> None:
@@ -58,7 +57,16 @@ class ChannelLayerNorm(nn.LayerNorm):
         y = super().forward(x)
         y = y.transpose(1, -1)
         return y
+    
+class Encoder1D(MLP):
 
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
+class Decoder1D(MLP):
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
 
 class Encoder2D(nn.Module):
 
@@ -191,7 +199,6 @@ class Decoder2D(nn.Module):
                 skip = self.upsample_layers(skip)
             y = self.final_act(x + skip)
             return y
-        
 
 class RecurrentNet(nn.Module):
 
@@ -246,7 +253,7 @@ class WorldModel(nn.Module):
                 encoder_args['hidden_dim'] = cnn_dim
                 encoder_args['Activation'] = Act
                 encoded_dim += (2**3) * cnn_dim * input_h//16 * input_w//16
-            elif network_type == 'networks.MLP':
+            elif network_type == 'networks.Encoder1D':
                 encoder_args['n_layers'] = 3
                 encoder_args['hx_dim'] = hidden_dim
                 encoder_args['out_dim'] = hidden_dim 
@@ -261,7 +268,7 @@ class WorldModel(nn.Module):
         # Representation Network: maps enc_t, h_t -> z_t
         self.representation_net = MLP(
             encoded_dim + recurrent_dim, 2, hidden_dim, latent_dim**2, Act,
-            postprocessing = nn.Sequential(nn.Unflatten(-1, self.latent_shape), Utils.UniformMix()),
+            postprocessing=nn.Sequential(nn.Unflatten(-1, self.latent_shape), Utils.UniformMix()),
             out_dist=OneHotDistribution())
         # Sequence Network: maps (z_t, a_t, h_t) -> h_{t+1}
         self.h0 = nn.Parameter(torch.zeros(1, recurrent_dim))
@@ -271,7 +278,7 @@ class WorldModel(nn.Module):
         # Dynamics Network: maps h_t -> ẑ_t
         self.dynamics_net = MLP(
             recurrent_dim, 2, hidden_dim, latent_dim**2, Act,
-            postprocessing = nn.Sequential(nn.Unflatten(-1, self.latent_shape), Utils.UniformMix()),
+            postprocessing=nn.Sequential(nn.Unflatten(-1, self.latent_shape), Utils.UniformMix()),
             out_dist=OneHotDistribution())
         # Decoder Networks: maps s_t -> obs_t 
         self.decoder_names = []
@@ -284,7 +291,7 @@ class WorldModel(nn.Module):
                 decoder_args['HxActivation'] = Act
                 decoder_args['OutActivation'] = nn.Sigmoid
                 decoder_args['out_dist'] = MSEDistribution(dims=3)
-            elif network_type == 'networks.MLP':
+            elif network_type == 'networks.Decoder1D':
                 decoder_args['in_dim'] = latent_dim**2 + recurrent_dim
                 decoder_args['n_layers'] = 4
                 decoder_args['hx_dim'] = hidden_dim
@@ -415,7 +422,6 @@ class WorldModel(nn.Module):
         h_t = self.sequence_net(za_t, h_t)
         return h_t
 
-
 class Dreamer(nn.Module):
 
     NET_CFG = {
@@ -543,7 +549,7 @@ class Dreamer(nn.Module):
         return self.DeployableDreamer(self)
 
     class DeployableDreamer(nn.Module):
-
+        # TODO
         def __init__(self, dreamer: nn.Module) -> None:
             super().__init__()
             # Encoder Networks: maps obs_t -> enc_t
