@@ -1,0 +1,123 @@
+# Lit Module Settings
+lit_module:
+  # When true, JIT-compiles lit-module code into optimized kernels via torch.compile
+  compile: false
+  # (time steps trained on) / (time step collected from the environment, without action repeat)
+  replay_ratio: 64
+  # Arguments to be passed to the logger callback
+  logging_callback_args:
+    # Level of logging (0: None, 1: Normal, 2: Debug)
+    log_level: 2
+  # Network Architecture Spec
+  networks:
+    size: XS
+    action_dim: 1
+    world_model:
+      networks.WorldModel:
+        encoders:
+          observation:
+            networks.Encoder1D: {in_dim: 2}
+        decoders:
+          observation:
+            networks.Decoder1D: {}
+    actor: 
+      networks.MLP: {}
+    critic:
+      networks.MLP: {}
+  # EMA to use for lambda values + value estimates during behavior optimization
+  advantage_ema:
+    utils.EMA: {}
+  # Optimization Settings
+  optimization:
+    # Optimizers to use for training (https://pytorch.org/docs/stable/optim.html#algorithms)
+    world_model:
+      optimizer:
+        torch.optim.Adam: {lr: 1.0e-4, eps: 1.0e-8}
+      gradient_clip:
+        gradient_clip_val: 1000
+        gradient_clip_algorithm: norm
+    actor:
+      optimizer:
+        torch.optim.Adam: {lr: 3.0e-5, eps: 1.0e-5}
+      gradient_clip:
+        gradient_clip_val: 100
+        gradient_clip_algorithm: norm
+    critic:
+      optimizer:
+        torch.optim.Adam: {lr: 3.0e-5, eps: 1.0e-5}
+      gradient_clip:
+        gradient_clip_val: 100
+        gradient_clip_algorithm: norm
+    # Optimization settings for target critic    
+    target_critic:
+      # How often (in gradient steps) to update the target critic network
+      update_freq: 1
+      # Factor determining how much the target critic gets updated w/ the critic's parameters
+      update_tau: 0.02
+    # Settings for dynamics model optimization (world-model)
+    dynamics:
+      # The weight of the "prediction" loss
+      prediction_loss_weight: 1.0
+      # The weight of the "dynamics" loss
+      dynamics_loss_weight: 0.5
+      # The weight of the "representation" loss
+      representation_loss_weight: 0.1
+    # Settings for behavior model optimization (actor+critic)
+    behavior:
+      # The lambda value for the TD-lambda algorithm
+      return_lambda: 0.95
+      # The gamma/discount value
+      discount_gamma: 0.997
+      # The weight of the action entropy on the overrall actor loss
+      action_entropy_weight: 3.0e-4
+      # The number of steps to "dream" for
+      dream_horizon: 15
+
+# Data Module Settings
+data_module:
+  # Number of samples within a mini-batch
+  batch_size: 16
+  # The number of agent steps within a sample
+  timesteps: 64
+  # Arguments to provide to the DataLoader
+  dataloader_args: {num_workers: 8}
+  # The spec for the replay buffer to use
+  replay_buffer:
+    torchrl.data.TensorDictReplayBuffer:
+      storage:
+        utils.CompressedStorage: {max_size: 1000}
+  # The Data Collector to use for data collection from environment
+  data_collector:
+    #data.ConcurrentDataCollector:
+    data.DataCollector:
+      environment_args: {gym_name: MountainCarContinuous-v0}
+      agent_args: {action_repeat: 1}
+      agent_update_freq: 1
+      #n_workers: 1
+  # Optional replay buffer ckpt (directory) to load at the start of training
+  replay_buffer_ckpt: null
+  # The number of samples to collect before training begins
+  replay_buffer_start_capacity: 0
+
+# Runner Settings
+runner:
+  # Type of runner to use. One of ('standard', 'ray')
+  type: standard
+  # Number to use for seeding the random number generators
+  rng_seed: 314
+  # A .CKPT file containing network parameters to begin training with
+  starting_params_ckpt: null
+  # A .CKPT file of an incomplete training run to resume
+  resume_training_ckpt: null
+  # Arguments to provide to the PyTorch Lightning Trainer (https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api)
+  ptl_trainer_args:
+    max_steps: 1.0e+8
+    max_epochs: null
+    precision: 16-mixed
+    log_every_n_steps: 100
+    benchmark: true
+    # Callbacks to use during training. (https://lightning.ai/docs/pytorch/stable/api_references.html#callbacks)
+    callbacks: [pytorch_lightning.callbacks.ModelCheckpoint: {save_top_k: 3, filename: '{step}-{hp_metric}', monitor: environment/return,
+                                                              mode: max, every_n_train_steps: 100, save_last: true}]
+    # PTL loggers to use during training. Note: CSVLogger is automatically added. (https://lightning.ai/docs/pytorch/stable/extensions/logging.html#supported-loggers)
+    logger: [pytorch_lightning.loggers.TensorBoardLogger: {save_dir: experiments, name: mt_car}]

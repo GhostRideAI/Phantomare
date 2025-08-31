@@ -90,7 +90,7 @@ data_module:
   data_collector:
     #data.ConcurrentDataCollector:
     data.DataCollector:
-      environment_args: {gym_name: CarRacing-v2}
+      environment_args: {gym_name: CarRacing-v3}
       agent_args: {action_repeat: 1}
       agent_update_freq: 1
       #n_workers: 1

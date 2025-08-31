@@ -3,7 +3,7 @@
 	"remoteUser": "docker-user",
 	"build": {
 		"dockerfile": "${localWorkspaceFolder}/environment/Dockerfile",
-		"context": "${localWorkspaceFolder}/environment"
+		"context": "${localWorkspaceFolder}/.docker"
 	},
 	"containerEnv": {
 		"HOST_UID": "${localEnv:UID}",

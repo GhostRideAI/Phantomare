@@ -1,0 +1,8 @@
+lightning
+gymnasium
+tensordict
+ray[train,tune]
+torchrl
+pillow
+torchvision
+imageio

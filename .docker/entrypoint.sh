@@ -12,6 +12,7 @@ fi
 
 groupmod --gid "$HOST_GID" docker-user
 usermod --uid "$HOST_UID" docker-user
+chown -R $USER:$USER /opt/venv
 echo "Password: Docker!"
 
 if [[ $# -gt 0 ]]; then
