@@ -1,12 +1,8 @@
 __pycache__/
 experiments/
-*.json
-!.devcontainer/devcontainer.json
-*.mp4
 *.png
-!assets/*.png
-*.h5
-.vscode/
+*.mp4
 *.gif
-*.onnx
+*.txt
+.vscode/
 !environment/requirements.txt
