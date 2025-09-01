@@ -11,7 +11,6 @@ Phantomare is a model-based RL algorithm originating from [Dreamer-V3](https://d
 - Clean code & design
 - Good documentation
 
-
 ## TODO
 - [X] conda -> venv
 - [ ] Unit test suite (1D env for training quick tests?)
