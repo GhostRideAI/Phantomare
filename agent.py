@@ -55,18 +55,22 @@ class Environment:
         def __init__(self, env: Env) -> None:
             super().__init__(env)
 
-        def observation(self, observations: dict[
-            str, NDArray] | NDArray) -> Tensor:
+        def observation(self, observations: dict[str, NDArray] | NDArray) -> Tensor:
             processed = TensorDict()
             if not isinstance(observations, dict):
-                observations = {'image': observations}
+                if observations.ndim > 1:
+                    observations = {'image': observations}
+                else:
+                    observations = {'observation': observations}
             for name, obs in observations.items():
+                # 2-D observation
                 if obs.ndim > 1:
                     if obs.shape[-1] == 1:
                         obs = Image.fromarray(obs[...,0])
                     else:
                         obs = Image.fromarray(obs)
                     obs = Utils.img2ten(obs).unsqueeze(0)
+                # 1-D observation
                 else:
                     obs = torch.tensor([obs], dtype=torch.float32)
                 processed[name] = obs
