@@ -19,7 +19,7 @@ lit_module:
             networks.Encoder1D: {in_dim: 2}
         decoders:
           observation:
-            networks.Decoder1D: {}
+            networks.Decoder1D: {out_dim: 2}
     actor: 
       networks.MLP: {}
     critic:
