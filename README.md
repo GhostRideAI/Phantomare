@@ -1,5 +1,4 @@
 # ☁️ P H A N T O M A R E 👻
-
 ## 🚧 UNDER DEVELOPMENT 🚧
 Phantomare is still in the early stages and under heavy development.
 
