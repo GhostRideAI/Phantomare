@@ -295,7 +295,6 @@ class WorldModel(nn.Module):
                 decoder_args['in_dim'] = latent_dim**2 + recurrent_dim
                 decoder_args['n_layers'] = 4
                 decoder_args['hx_dim'] = hidden_dim
-                decoder_args['out_dim'] = 255
                 decoder_args['HxActivation'] = Act
                 decoder_args['out_dist'] = SymlogDistribution()
             else:
@@ -321,8 +320,7 @@ class WorldModel(nn.Module):
         states = states.flatten(0,1)
         for name in self.decoder_names:
             d = getattr(self, f'{name}_decoder')(states)
-            # assert isinstance(d, (MSEDistribution.Distribution, SymlogDistribution.Distribution))
-            decoded[name] = d.__class__(d.mode.unflatten(0, (b,t)), len(d._dims), d._agg)
+            decoded[name] = type(d)(mode=d.mode.unflatten(0, (b,t)), dims=len(d._dims), agg=d._agg)
         return TensorDict(decoded, [b,t])
  
     def forward(self, obs: TensorDict, actions: Tensor, continues: Tensor) -> tuple[Tensor, Distribution]:
