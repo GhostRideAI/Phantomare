@@ -143,7 +143,7 @@ class Agent:
         for name, obs in observation.items():
             if obs.dtype == torch.uint8:
                 observation[name] = obs.to(dtype=torch.float32) / 255.0
-        state, posterior = self._world_model.encode_state(observation, self.h_t)
+        state, posterior = self._world_model.encode_state(observation, self.h_t, exploit)
         action_dist = self._actor(state)
         if exploit: action = action_dist.mode
         else: 
