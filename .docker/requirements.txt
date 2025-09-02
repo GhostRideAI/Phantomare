@@ -6,3 +6,6 @@ torchrl
 pillow
 torchvision
 imageio
+tensorboard
+moviepy
+pygame
