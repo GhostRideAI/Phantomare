@@ -35,6 +35,8 @@ class DataCollector:
         self._return_buffer = []
         self.total_steps = 0
         self.rb_lock = rb_lock
+        self._env_args = environment_args
+        self._agent_args = agent_args
         self.env = Environment(**environment_args.to_dict())
         self.agent = Agent(self.env, policy, **agent_args.to_dict())
         self.action_repeat = self.agent.action_repeat
@@ -67,25 +69,62 @@ class DataCollector:
         return fps
 
     def step(self) -> None:
+        # Step Agent
         obs = self._current_observation
         new_obs, action, reward, term, trunc = self.agent.act(obs, exploit=False)
         self.total_steps += 1
+        # Determine if episode is done
         done = max(term, trunc)
+        # Add step results to current experience
         self._current_experience['observations'] += [obs.cpu()]
         self._current_experience['actions'] += [action.cpu()]
         self._current_experience['rewards'] += [reward.cpu()]
         self._current_experience['continues'] += [~done.cpu()]
+        # If episode is done...
         if done:
-            self._return_buffer += [self.agent.current_return]
+            # Reset the agent
             self._current_observation, _ = self.agent.reset()
-        else: self._current_observation = new_obs
+        else: 
+            # Else update the current observation
+            #   with the new observation
+            self._current_observation = new_obs
+        # If the current experience is at the max number of timesteps for a sample...
         if len(self._current_experience['actions']) == self.timesteps_per_sample:
+            # Convert experience into a TensorDict
             experience = TensorDict({k: torch.cat(v) for k,v in
                                      self._current_experience.items()},
                 batch_size=[self.timesteps_per_sample])
+            # Aquire the replay buffer lock and add the experience to it
             with self.rb_lock: self.replay_buffer.add(experience)
+            # Initialize the new experience with all
+            #   previous experience minus the 1st timestep
             for k,v in self._current_experience.items():
                 self._current_experience[k] = v[1:]
+
+    def evaluate_agent(self, n_episodes: int) -> None:
+        # Create new environment for evaluation 
+        env = Environment(**self._env_args.to_dict())
+        # Get policy type from current agent
+        policy_type = self.agent._policy_type
+        # If policy type is random...
+        if policy_type == 'random':
+            # Set policy to random
+            policy = 'random'
+        else:
+            # Else we get the neural networks from the current agent
+            policy = (self.agent._world_model, self.agent._actor) 
+        # Construct the new agent to be used for evaluation
+        agent = Agent(env, policy, **self._agent_args.to_dict())
+        # For N episodes, evaluate;
+        for _ in range(n_episodes):
+            obs, _ = agent.reset()
+            done = False
+            while not done:
+                new_obs, _, _, term, trunc = agent.act(obs, exploit=True)
+                obs = new_obs
+                done = max(term, trunc)
+            # Add agent's return to return buffer
+            self._return_buffer += [agent.current_return]
 
 class ConcurrentDataCollector:
 

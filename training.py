@@ -1,4 +1,5 @@
 # Imports
+import math
 import shutil
 import copy
 from enum import Enum
@@ -78,6 +79,10 @@ class LitModule(ptl.LightningModule):
             while agent_steps < self._next_grad_step:
                 agent_steps = self.trainer.datamodule.data_collector.total_steps
             self._next_grad_step += self.agent_steps_per_grad_step
+        # If time, Perform Evaluation of Agent
+        if isinstance(self.trainer.datamodule.data_collector, DataCollector):
+            if (self.global_step % self.cfg.eval_every_n_steps) == 0:
+                    self.trainer.datamodule.data_collector.evaluate_agent(self.cfg.eval_n_episodes)
 
     def training_step(self, batch: TensorDict, batch_idx: int) -> dict[str, Tensor]:
         # (0) Prepare for Step
@@ -203,7 +208,7 @@ class LitModule(ptl.LightningModule):
             vals += [ interm[:,t] + continues[:,t] * lmbda * vals[-1] ]
         returns = torch.cat(list(reversed(vals))[:-1], 1)
         return returns.unsqueeze(-1)
-
+    
     def _create_log_dict(self, locs: dict) -> dict:
         results = {cat: {} for cat in ('metrics', 'hists', 'imgs', 'vids')}
         results['metrics'].update({k:v.cpu() for k,v in locs['world_model_losses'].items()})
@@ -270,8 +275,13 @@ class LitModule(ptl.LightningModule):
 
         def on_train_batch_end(self, trainer: ptl.Trainer, pl_module: ptl.LightningModule, *args, **kwargs):
             super().on_train_batch_end(trainer, pl_module, *args, **kwargs)
+            if 'environment/return' in trainer.callback_metrics:
+                env_return = trainer.callback_metrics['environment/return'].item()
+            else:
+                env_return = -math.inf
             print(f"👻 > Gradient-Step: {pl_module.global_step} || "
-                  f"Environment-Step: {trainer.datamodule.data_collector.total_steps}", end='\r')
+                  f"Environment-Step: {trainer.datamodule.data_collector.total_steps} || "
+                  f"Environment-Return: {env_return:.3f}", end='\r')
     
     class LoggingCallback(ptl.Callback):
         
@@ -311,7 +321,7 @@ class LitModule(ptl.LightningModule):
                 rb_len = len(trainer.datamodule.replay_buffer)
                 pl_module.log('environment/replay_buffer_length', rb_len)
                 avg_return = trainer.datamodule.data_collector.average_return
-                pl_module.log('environment/return', avg_return)
+                pl_module.log('environment/return', avg_return, prog_bar=True)
                 pl_module.log('hp_metric', avg_return)
                 agent_steps = trainer.datamodule.data_collector.total_steps
                 action_repeat = trainer.datamodule.data_collector.action_repeat
