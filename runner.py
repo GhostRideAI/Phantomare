@@ -86,6 +86,7 @@ class Runner:
         else:
             self._ptl_trainer = ptl.Trainer(
                     num_sanity_val_steps=0,
+                    enable_progress_bar=False,
                     **self.cfg.ptl_trainer_args.to_dict())
     
     def _prep_loggers(self) -> None:

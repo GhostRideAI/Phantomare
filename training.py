@@ -3,7 +3,7 @@ import shutil
 import copy
 from enum import Enum
 from pytorch_lightning.utilities.types import OptimizerLRScheduler
-from pytorch_lightning.callbacks import TQDMProgressBar
+from pytorch_lightning.callbacks import ProgressBar
 import torch
 from torch import Tensor
 from tensordict import TensorDict
@@ -40,7 +40,7 @@ class LitModule(ptl.LightningModule):
         return wm_opt, actor_opt, critic_opt
     
     def configure_callbacks(self) -> ptl.Callback:
-       return [#self.CustomProgressBar(),
+       return [self.CustomProgressBar(),
                self.LoggingCallback(**self.cfg.logging_callback_args.to_dict())]
 
     def on_fit_start(self) -> None:
@@ -254,25 +254,35 @@ class LitModule(ptl.LightningModule):
             results['hists']['behavior/critic_value_estimate'] = locs['values'].cpu()
             results['metrics']['behavior/advantage'] = locs['advantage'].cpu()
         return results
+
+    class CustomProgressBar(ProgressBar):
+        """
+        Custom PTL progress bar which reports important info.
+        This gets added to the PTL Trainer's callbacks in the
+        configure_callbacks method in the LitModule.
+        """
+        def __init__(self) -> None:
+            super().__init__()
+            self.enable = True
+
+        def disable(self) -> None:
+            self.enable = False
+
+        def on_train_batch_end(self, trainer: ptl.Trainer, pl_module: ptl.LightningModule, *args, **kwargs):
+            super().on_train_batch_end(trainer, pl_module, *args, **kwargs)
+            print(f"👻 > Gradient-Step: {pl_module.global_step} || "
+                  f"Environment-Step: {trainer.datamodule.data_collector.total_steps}", end='\r')
     
-    class CustomProgressBar(TQDMProgressBar):
-
-        def on_train_epoch_start(self, trainer, pl_module):
-            super().on_train_epoch_start(trainer, pl_module)
-            self.train_progress_bar.set_description(
-                f"Gradient-Step {pl_module.global_step} || "
-                f"Environment-Step {trainer.datamodule.data_collector.total_steps}")
-
     class LoggingCallback(ptl.Callback):
         
-        class LogLevels(Enum):
+        class LogLevel(Enum):
             OFF = 0
             NORMAL = 1
             DEBUG = 2
         
         def __init__(self, log_level: int=0) -> None:
             super().__init__()
-            self.log_level = self.LogLevels(log_level)
+            self.log_level = self.LogLevel(log_level)
             self.current_step_logs = {}
 
         def on_train_batch_end(self, trainer: ptl.Trainer,
@@ -295,7 +305,7 @@ class LitModule(ptl.LightningModule):
                         #pl_module.logger.experiment.add_histogram(
                         #    name, tensor, pl_module.global_step)
                     except: pass
-            if (self.log_level == self.LogLevels.DEBUG and
+            if (self.log_level == self.LogLevel.DEBUG and
                 (batch_idx % trainer.log_every_n_steps) == 0):
                 #self._log_network_metrics(pl_module)
                 rb_len = len(trainer.datamodule.replay_buffer)
