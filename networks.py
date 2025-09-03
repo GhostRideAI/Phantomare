@@ -424,6 +424,7 @@ class Dreamer(nn.Module):
 
     NET_CFG = {
         'Activation': nn.SiLU,
+        'smol' : {'hidden_dim': 64,  'recurrent_dim': 64,  'cnn_dim': 4, 'latent_dim': 4},
         'XS' : {'hidden_dim': 256,  'recurrent_dim': 256,  'cnn_dim': 16, 'latent_dim': 16},
         'S'  : {'hidden_dim': 512,  'recurrent_dim': 512,  'cnn_dim': 24, 'latent_dim': 24},
         'M'  : {'hidden_dim': 640,  'recurrent_dim': 1024, 'cnn_dim': 32, 'latent_dim': 32},
