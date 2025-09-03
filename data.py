@@ -92,8 +92,8 @@ class DataCollector:
         if len(self._current_experience['actions']) == self.timesteps_per_sample:
             # Convert experience into a TensorDict
             experience = TensorDict({k: torch.cat(v) for k,v in
-                                     self._current_experience.items()},
-                batch_size=[self.timesteps_per_sample])
+                                     self._current_experience.items()})
+            experience.auto_batch_size_(1)
             # Aquire the replay buffer lock and add the experience to it
             with self.rb_lock: self.replay_buffer.add(experience)
             # Initialize the new experience with all
@@ -279,7 +279,8 @@ class DataModule(ptl.LightningDataModule):
             self.rb_lock = mp.Lock()
             self.replay_buffer = self.cfg.replay_buffer.create_instance(
                                     {'batch_size': self.batch_size,
-                                     'collate_fn': self.collate_fn})
+                                     'collate_fn': self.collate_fn,
+                                     'transform': self.stack_transform})
             self.replay_buffer._storage.scratch_dir = self.trainer.log_dir + '/replay-buffer'
             if self.cfg.has('replay_buffer_ckpt'):
                 self.replay_buffer.loads(self.cfg.replay_buffer_ckpt)
@@ -305,6 +306,13 @@ class DataModule(ptl.LightningDataModule):
     @staticmethod
     def collate_fn(x: Any) -> Any:
         return x
+
+    @staticmethod 
+    def stack_transform(x: TensorDict|list[TensorDict]) -> TensorDict:
+        if isinstance(x, list):
+            return torch.stack(x)
+        else:
+            return x
 
     def train_dataloader(self) -> DataLoader:
         ds = Dataset(self.cfg.batch_size, self.replay_buffer, self.rb_lock)
