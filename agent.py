@@ -72,7 +72,7 @@ class Environment:
                     obs = Utils.img2ten(obs).unsqueeze(0)
                 # 1-D observation
                 else:
-                    obs = torch.tensor([obs], dtype=torch.float32)
+                    obs = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
                 processed[name] = obs
             processed.auto_batch_size_(1)
             return processed 
