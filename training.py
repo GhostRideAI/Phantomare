@@ -16,6 +16,8 @@ from utils import Config, Utils
 from networks import Dreamer
 from data import DataCollector, ConcurrentDataCollector
 
+#from line_profiler import profile
+
 #####################################################################
 #   Lit-Module                                                 
 #####################################################################
@@ -57,6 +59,7 @@ class LitModule(ptl.LightningModule):
         self.agent_steps_per_grad_step = batch_agent_steps // replay_ratio
         self._next_grad_step = self.agent_steps_per_grad_step
 
+    #@profile
     def on_train_batch_start(self, *args, **kwargs) -> None:
         # Update Target Critic
         update_freq = self.cfg.optimization.target_critic.update_freq
@@ -66,9 +69,9 @@ class LitModule(ptl.LightningModule):
         # Update Data Collection Agent
         update_freq = self.trainer.datamodule.data_collector.agent_update_freq
         if (self.global_step % update_freq) == 0:
-            self.trainer.datamodule.data_collector.update_policy((
-                copy.deepcopy(self.net.world_model).to('cpu', non_blocking=True),
-                copy.deepcopy(self.net.actor).to('cpu', non_blocking=True)))
+            self.trainer.datamodule.data_collector.update_policy(
+                (copy.deepcopy(self.net.world_model).to('cpu', non_blocking=True),
+                 copy.deepcopy(self.net.actor).to('cpu', non_blocking=True)))
         # Step Agent in Real Environment
         if isinstance(self.trainer.datamodule.data_collector, DataCollector):
             for _ in range(self.agent_steps_per_grad_step):
@@ -84,6 +87,7 @@ class LitModule(ptl.LightningModule):
             if (self.global_step % self.cfg.eval_every_n_steps) == 0:
                     self.trainer.datamodule.data_collector.evaluate_agent(self.cfg.eval_n_episodes)
 
+    #@profile
     def training_step(self, batch: TensorDict, batch_idx: int) -> dict[str, Tensor]:
         # (0) Prepare for Step
         observations, actions, continues = (
@@ -135,7 +139,11 @@ class LitModule(ptl.LightningModule):
             self.clip_gradients(critic_opt, **self.cfg.optimization.critic.gradient_clip.to_dict())
         critic_opt.step()
         # (4) Return Metrics for Logging
-        results = self._create_log_dict(locals())
+        # HACK: for torch.compile
+        if 'world_model_losses' in locals():
+            results = self._create_log_dict(locals())
+        else:
+            results = {}
         return results
 
     def world_model_loss_func(self, wm_outputs: tuple[Tensor], batch: TensorDict) -> Tensor:
