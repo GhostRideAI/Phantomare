@@ -46,8 +46,7 @@ class Runner:
     def execute(self, routine: str='train') -> None:
         if routine == 'train':
             if not self.global_cfg.debug and self.lm_cfg.compile:
-                self._lit_module.net = torch.compile(self._lit_module.net)
-                self._lit_module.advantage_ema = torch.compile(self._lit_module.advantage_ema)
+                self._lit_module = torch.compile(self._lit_module)
             self._ptl_trainer.fit(self._lit_module, self._data_module,
                                   ckpt_path=(
                                       self.cfg.resume_training_ckpt if
