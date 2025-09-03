@@ -2,7 +2,7 @@
 	"name": "Phantomare",
 	"remoteUser": "docker-user",
 	"build": {
-		"dockerfile": "${localWorkspaceFolder}/environment/Dockerfile",
+		"dockerfile": "${localWorkspaceFolder}/.docker/Dockerfile",
 		"context": "${localWorkspaceFolder}/.docker"
 	},
 	"containerEnv": {
