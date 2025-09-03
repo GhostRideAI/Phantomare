@@ -13,7 +13,7 @@ RUN echo 'docker-user:Docker!' | chpasswd
 
 # Install system dependencies
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt update && apt install git ffmpeg libsm6 libxext6 xvfb python3 python3-venv -y
+RUN apt update && apt install git ffmpeg libsm6 libxext6 xvfb python3 python3-venv python3-dev gcc -y
 
 # Create Python venv & install dependencies
 RUN python3 -m venv /opt/venv
