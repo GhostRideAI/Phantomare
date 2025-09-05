@@ -2,11 +2,13 @@
 import copy
 import torch
 from torch import Tensor, nn
+from torch._higher_order_ops import scan as torch_scan
 import numpy as np
 from tensordict import TensorDict
 from distributions import *
 from utils import Config, Utils
-import operator
+from line_profiler import profile
+
 
 #####################################################################
 #   General Neural Network Modules
@@ -322,12 +324,61 @@ class WorldModel(nn.Module):
             d = getattr(self, f'{name}_decoder')(states)
             decoded[name] = type(d)(mode=d.mode.unflatten(0, (b,t)), dims=len(d._dims), agg=d._agg)
         return TensorDict(decoded, [b,t])
- 
+
+    @profile
     def forward(self, obs: TensorDict, actions: Tensor, continues: Tensor) -> tuple[Tensor, Distribution]:
         # Get initial recurrent state
         h_t = self._get_inital_recurrent_state(actions.size(0))
         # Encode observations
         enc = self._forward_encoders(obs)
+        # remove last dimension of continues
+        continues = continues.squeeze(-1)
+        # Perform autoregression
+        # NOTE: Torch scan is slow and doesn't like dynamic shapes :(
+        #_, (recurrents, states, posteriors, posterior_logits) = torch_scan(
+        #    self._autoregress_step, h_t, (enc, actions, continues), dim=1)
+        (recurrents, states, posteriors, posterior_logits
+         ) = self._autoregress(enc, actions, continues, h_t)
+        # Re-adjust dimension order to (B,T,*)
+        recurrents = recurrents.transpose(0,1)
+        states = states.transpose(0,1)
+        posteriors = posteriors.transpose(0,1)
+        posterior_logits = posterior_logits.transpose(0,1)
+        # Form posterior distribution
+        posterior_distribution = Utils.one_hot_cat_dist(posterior_logits)
+        # Calculate the prior distribution
+        prior_distribution = self.dynamics_net(recurrents)
+        # Calculate the reward distribution
+        reward_distribution = self.reward_net(states)
+        # Calculate the continue distribution
+        continue_distribution = self.continue_net(states)
+        # Estimate the observation x̂ from the state
+        est_observation_distribution = self._forward_decoders(states)
+        return (prior_distribution, posterior_distribution, est_observation_distribution, 
+                reward_distribution, continue_distribution, posteriors, recurrents)
+    
+    def _autoregress_step(self, h_t: Tensor, x_t: tuple[Tensor]) -> tuple[Tensor]:
+        # Unpack input tuple
+        enc_t, a_t, c_t = x_t
+        # Calculate the posterior distribution logits
+        posterior_distribution_t = self.representation_net(torch.cat((enc_t, h_t), -1))
+        z_t = posterior_distribution_t.rsample()
+        # Form the current state s_t
+        s_t = torch.cat((h_t, z_t.flatten(-2)), -1)
+        # Save off current recurrent hidden state
+        h_now = h_t.clone()
+        # Calculate the next recurrent hidden state h_t+1 where continuing
+        za_t = torch.cat((z_t.flatten(-2), a_t), -1)
+        h_t[c_t] = self.sequence_net(za_t[c_t], h_t[c_t])
+        h_t = self.sequence_net(za_t, h_t)
+        # Reset hidden states where done
+        d_t = ~c_t
+        h_t[d_t] = self._get_inital_recurrent_state(d_t.sum())
+        # Form y @ timestep t
+        y_t = (h_now, s_t, z_t, posterior_distribution_t.base_dist.logits)
+        return h_t, y_t
+ 
+    def _autoregress(self, enc: Tensor, actions: Tensor, continues: Tensor, h_t: Tensor) -> tuple[Tensor]:
         # Initialize lists for storing step results
         (posterior_logits, states,
          posteriors, recurrents) = [], [], [], []
@@ -343,28 +394,18 @@ class WorldModel(nn.Module):
             posteriors += [z_t]
             posterior_logits += [posterior_distribution_t.base_dist.logits]
             recurrents += [h_t]
-            # Calculate the next recurrent hidden state h_t+1
+            # Calculate the next recurrent hidden state h_t+1 where continuing
             za_t = torch.cat((z_t.flatten(-2), a_t), -1)
-            # Calculate new recurrent vector (reset if done)
-            c_t = c_t.squeeze(-1)
             h_t[c_t] = self.sequence_net(za_t[c_t], h_t[c_t])
-            h_t[~c_t] = self._get_inital_recurrent_state((~c_t).sum())
+            # Reset hidden states where done
+            d_t = ~c_t
+            h_t[d_t] = self._get_inital_recurrent_state(d_t.sum())
         # Combine sequences/create posterior distribution
-        posterior_distribution = Utils.one_hot_cat_dist(
-            torch.stack(posterior_logits).transpose(0,1))
-        posteriors = torch.stack(posteriors).transpose(0,1)
-        recurrents = torch.stack(recurrents).transpose(0,1)
-        states = torch.stack(states).transpose(0,1)
-        # Calculate the prior distribution
-        prior_distribution = self.dynamics_net(recurrents)
-        # Calculate the reward distribution
-        reward_distribution = self.reward_net(states)
-        # Calculate the continue distribution
-        continue_distribution = self.continue_net(states)
-        # Estimate the observation x̂ from the state
-        est_observation_distribution = self._forward_decoders(states)
-        return (prior_distribution, posterior_distribution, est_observation_distribution, 
-                reward_distribution, continue_distribution, posteriors, recurrents)
+        recurrents = torch.stack(recurrents)
+        states = torch.stack(states)
+        posteriors = torch.stack(posteriors)
+        posterior_logits = torch.stack(posterior_logits)
+        return recurrents, states, posteriors, posterior_logits 
 
     def dream(self, initial_posterior: Tensor, initial_recurrent: Tensor,
               actor: nn.Module, n_steps: int, exploit: bool = False) -> tuple[Tensor, Distribution]:
