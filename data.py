@@ -95,7 +95,8 @@ class DataCollector:
                                      self._current_experience.items()})
             experience.auto_batch_size_(1)
             # Aquire the replay buffer lock and add the experience to it
-            with self.rb_lock: self.replay_buffer.add(experience)
+            with self.rb_lock:
+                self.replay_buffer.add(experience)
             # Initialize the new experience with all
             #   previous experience minus the 1st timestep
             for k,v in self._current_experience.items():
@@ -144,17 +145,22 @@ class ConcurrentDataCollector:
             replay_buffer, policy, timesteps_per_sample,
             agent_update_freq, environment_args, agent_args, rb_lock)
         self.agent_update_freq = agent_update_freq
-        # Create buffer for policy communication
-        self._policy_buffers = [mp.Queue(1) for _ in range(n_workers)]
-        # Create return communication
-        self._worker_return = mp.Value('f', 0.0)
         # Start process for data-collection
-        self._policy_update_events = [mp.Event() for _ in range(n_workers)]
+        self._replay_buffer = replay_buffer
+        self._policy = policy
+        self._timesteps_per_sample = timesteps_per_sample
+        self._agent_update_freq = agent_update_freq
+        self._environment_args = environment_args
+        self._agent_args = agent_args
+        self.n_workers = n_workers
+        self.processes = []
+        self.is_running = False
+
+    def start(self) -> None:
         self.processes = [mp.Process(target=self._collect, args=(
-            replay_buffer, policy, timesteps_per_sample,
-            agent_update_freq, environment_args, agent_args,
-            self._policy_update_events[i], self._policy_buffers[i],
-            self._worker_return, self._total_steps, self.rb_lock)) for i in range(n_workers)]
+            self._replay_buffer, self._policy, self._timesteps_per_sample,
+            self._agent_update_freq, self._environment_args, self._agent_args,
+            self._total_steps, self.rb_lock)) for _ in range(self.n_workers)]
         # Launch data-collection process
         [p.start() for p in self.processes]
         self.is_running = True
@@ -168,6 +174,10 @@ class ConcurrentDataCollector:
 
     def __del__(self) -> None:
         self.stop()
+
+    def update_policy(self, policy: tuple[nn.Module] | str) -> None:
+        assert not self.is_running
+        self._policy = policy
 
     @property
     def total_steps(self) -> int:
@@ -189,19 +199,10 @@ class ConcurrentDataCollector:
         self._worker_return.value = 0.0
         return avg_return
 
-    def update_policy(self, policy: tuple[nn.Module] | str) -> None:
-        for e, q in zip(self._policy_update_events, self._policy_buffers):
-            try:
-                while True: q.get_nowait()
-            except: pass
-            q.put(policy)
-            e.set()
-
     @staticmethod
     def _collect(replay_buffer: ReplayBuffer, policy: tuple[nn.Module] | str,
                  timesteps_per_sample: int, agent_update_freq: int, environment_args: Config,
-                 agent_args: Config, policy_update_event: Event, policy_buffer: mp.Queue,
-                 worker_return: Synchronized, step_counter: Synchronized, rb_lock: Lock) -> None:
+                 agent_args: Config, step_counter: Synchronized, rb_lock: Lock) -> None:
         # Create data collector instance
         data_collector = DataCollector(replay_buffer, policy, timesteps_per_sample,
                                        agent_update_freq, environment_args, agent_args, rb_lock)
@@ -214,15 +215,8 @@ class ConcurrentDataCollector:
         signal.signal(signal.SIGINT, signal_handler)
         # Loop forever...
         while run_data_collection:
-            while not policy_update_event.is_set():
-                data_collector.step()
-                step_counter.value += 1
-                if len(data_collector._return_buffer) > 0:
-                    worker_return.value = (
-                        worker_return.value +
-                        data_collector.average_return) / 2
-            data_collector.update_policy(policy_buffer.get())
-            policy_update_event.clear()
+            data_collector.step()
+            step_counter.value += 1
 
     def _init_replay_buffer(self, replay_buffer: ReplayBuffer, 
                             policy: tuple[nn.Module] | str,
@@ -233,6 +227,7 @@ class ConcurrentDataCollector:
         dc = DataCollector(replay_buffer, policy, timesteps_per_sample,
                            agent_update_freq, environment_args, agent_args, rb_lock)
         self.action_repeat = dc.agent.action_repeat
+        pbar = tqdm(total=timesteps_per_sample)
         while len(replay_buffer) == 0: 
             dc.step()
             self._total_steps.value += 1
@@ -275,7 +270,7 @@ class DataModule(ptl.LightningDataModule):
 
     def setup(self, stage: str) -> None:
         if stage == 'fit':
-            # Create Replay Buffer
+            # (1) Create Replay Buffer
             self.rb_lock = mp.Lock()
             self.replay_buffer = self.cfg.replay_buffer.create_instance(
                                     {'batch_size': self.batch_size,
@@ -284,11 +279,11 @@ class DataModule(ptl.LightningDataModule):
             self.replay_buffer._storage.scratch_dir = self.trainer.log_dir + '/replay-buffer'
             if self.cfg.has('replay_buffer_ckpt'):
                 self.replay_buffer.loads(self.cfg.replay_buffer_ckpt)
-            # Create Data Collector
+            # (2) Create Data Collector
             self.data_collector = self.cfg.data_collector.create_instance({
                 'replay_buffer': self.replay_buffer, 'policy': 'random',
                 'timesteps_per_sample': self.timesteps, 'rb_lock': self.rb_lock})
-            # Prefill the replay buffer
+            # (3) Prefill the replay buffer
             self.batch_agent_steps = self.batch_size * self.timesteps
             self.agent_action_repeat = self.data_collector.action_repeat 
             self.batch_env_steps = self.agent_action_repeat * self.batch_agent_steps

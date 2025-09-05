@@ -6,7 +6,7 @@ from enum import Enum
 from pytorch_lightning.utilities.types import OptimizerLRScheduler
 from pytorch_lightning.callbacks import ProgressBar
 import torch
-from torch import Tensor
+from torch import Tensor, nn
 from tensordict import TensorDict
 import torch.distributions as td
 from torch.distributions import Distribution
@@ -16,7 +16,7 @@ from utils import Config, Utils
 from networks import Dreamer
 from data import DataCollector, ConcurrentDataCollector
 
-#from line_profiler import profile
+from line_profiler import profile
 
 #####################################################################
 #   Lit-Module                                                 
@@ -58,34 +58,51 @@ class LitModule(ptl.LightningModule):
         replay_ratio = self.cfg.replay_ratio
         self.agent_steps_per_grad_step = batch_agent_steps // replay_ratio
         self._next_grad_step = self.agent_steps_per_grad_step
+        # Share model with DataCollector
+        self._wm4dc = copy.deepcopy(self.net.world_model).to('cpu')
+        self._actor4dc = copy.deepcopy(self.net.actor).to('cpu')
+        self._wm4dc.share_memory()
+        self._actor4dc.share_memory()
+        self.trainer.datamodule.data_collector.update_policy(
+            (self._wm4dc, self._actor4dc))
+        # If multiprocessing DataCollector, start processes
+        if isinstance(self.trainer.datamodule.data_collector, ConcurrentDataCollector):
+            self.trainer.datamodule.data_collector.start()
 
-    #@profile
+    def _copy_model_parameters(self, from_model: nn.Module, to_model: nn.Module) -> None:
+        for _from, _to in zip(from_model.parameters(), to_model.parameters()):
+            _to.data.copy_(_from.data, non_blocking=True)
+
     def on_train_batch_start(self, *args, **kwargs) -> None:
-        # Update Target Critic
+        # (1) Update Target Critic
         update_freq = self.cfg.optimization.target_critic.update_freq
         update_tau = self.cfg.optimization.target_critic.update_tau
         if (self.global_step % update_freq) == 0:
             self.net.update_target_critic(update_tau)
-        # Update Data Collection Agent
+        # (2) Update Data Collection Agent
         update_freq = self.trainer.datamodule.data_collector.agent_update_freq
         if (self.global_step % update_freq) == 0:
-            self.trainer.datamodule.data_collector.update_policy(
-                (copy.deepcopy(self.net.world_model).to('cpu', non_blocking=True),
-                 copy.deepcopy(self.net.actor).to('cpu', non_blocking=True)))
-        # Step Agent in Real Environment
+            self._copy_model_parameters( self.net.world_model, self._wm4dc)
+            self._copy_model_parameters( self.net.actor, self._actor4dc)
+        # (3) Handle DataCollector
         if isinstance(self.trainer.datamodule.data_collector, DataCollector):
+            # (3.1) If single process DataCollector,
+            #           step it for required number of steps
             for _ in range(self.agent_steps_per_grad_step):
                 self.trainer.datamodule.data_collector.step()
+            # (3.2) else if multi-process DataCollector, and its couple with algorithm...
         elif isinstance(self.trainer.datamodule.data_collector, ConcurrentDataCollector) and (
                         not self.trainer.datamodule.data_collector.decoupled):
+            # (3.2.1) Wait for agent steps to catch up before continuing
             agent_steps = self.trainer.datamodule.data_collector.total_steps
             while agent_steps < self._next_grad_step:
                 agent_steps = self.trainer.datamodule.data_collector.total_steps
             self._next_grad_step += self.agent_steps_per_grad_step
-        # If time, Perform Evaluation of Agent
+        # (4) If time, Perform Evaluation of Agent
         if isinstance(self.trainer.datamodule.data_collector, DataCollector):
             if (self.global_step % self.cfg.eval_every_n_steps) == 0:
                     self.trainer.datamodule.data_collector.evaluate_agent(self.cfg.eval_n_episodes)
+        # TODO: implement evaluation for ConcurrentDataCollector
 
     #@profile
     def training_step(self, batch: TensorDict, batch_idx: int) -> dict[str, Tensor]:
