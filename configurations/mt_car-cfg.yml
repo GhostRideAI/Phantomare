@@ -7,14 +7,14 @@ lit_module:
   # Arguments to be passed to the logger callback
   logging_callback_args:
     # Level of logging (0: None, 1: Normal, 2: Debug)
-    log_level: 2
+    log_level: 0
   # Perform agent evaluation every N gradients steps
   eval_every_n_steps: 100
   # Evaluation consists of N episodes
   eval_n_episodes: 1
   # Network Architecture Spec
   networks:
-    size: XS
+    size: smol
     action_dim: 1
     world_model:
       networks.WorldModel:
@@ -84,20 +84,22 @@ data_module:
   # The number of agent steps within a sample
   timesteps: 64
   # Arguments to provide to the DataLoader
-  dataloader_args: {num_workers: 8}
+  dataloader_args: {num_workers: 0}
   # The spec for the replay buffer to use
   replay_buffer:
-    torchrl.data.TensorDictReplayBuffer:
+    torchrl.data.ReplayBuffer:
       storage:
-        utils.CompressedStorage: {max_size: 10000}
+        #utils.CompressedStorage: {max_size: 10000}
+        torchrl.data.replay_buffers.LazyMemmapStorage: {max_size: 10000}
+        #torchrl.data.replay_buffers.ListStorage: {max_size: 10000}
   # The Data Collector to use for data collection from environment
   data_collector:
-    #data.ConcurrentDataCollector:
-    data.DataCollector:
+    data.ConcurrentDataCollector:
+    #data.DataCollector:
       environment_args: {gym_name: MountainCarContinuous-v0}
-      agent_args: {action_repeat: 2}
+      agent_args: {action_repeat: 1}
       agent_update_freq: 1
-      #n_workers: 1
+      n_workers: 1
   # Optional replay buffer ckpt (directory) to load at the start of training
   replay_buffer_ckpt: null
   # The number of samples to collect before training begins
@@ -115,7 +117,7 @@ runner:
   resume_training_ckpt: null
   # Arguments to provide to the PyTorch Lightning Trainer (https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api)
   ptl_trainer_args:
-    max_steps: 1.0e+8
+    max_steps: 50
     precision: bf16
     log_every_n_steps: 100
     benchmark: true
