@@ -101,7 +101,6 @@ class Runner:
                             i].to_dict().values())[0].version = self._override_exp_dir.version
                     self.cfg.ptl_trainer_args.logger[i] = self.cfg.ptl_trainer_args.logger[i].create_instance()
                 l = self.cfg.ptl_trainer_args.logger[0]
-                self.cfg.ptl_trainer_args.logger += [CSVLogger(l.save_dir, l.name, l.version)]
             else:
                 if self._override_exp_dir:
                     list(self.cfg.ptl_trainer_args.logger.save_dir.to_dict().values())[0] = self._override_exp_dir.save_dir
@@ -109,7 +108,7 @@ class Runner:
                     list(self.cfg.ptl_trainer_args.logger.version)[0] = self._override_exp_dir.version
                 self.cfg.ptl_trainer_args.logger = self.cfg.ptl_trainer_args.logger.create_instance()
                 l = self.cfg.ptl_trainer_args.logger
-                self.cfg.ptl_trainer_args.logger = [l, CSVLogger(l.save_dir, l.name, l.version)]
+                self.cfg.ptl_trainer_args.logger = [l]
             self._log_dir = Config(save_dir=l.save_dir, name=l.name, version=(
                 f'version_{l.version}' if isinstance(l.version, int) else l.version))
 
