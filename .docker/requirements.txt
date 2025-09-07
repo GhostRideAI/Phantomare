@@ -9,3 +9,5 @@ imageio
 tensorboard
 moviepy
 pygame
+line_profiler
+transformer-engine[pytorch]

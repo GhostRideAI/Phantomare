@@ -1,5 +1,5 @@
 # Start with Ubuntu 24.04 base
-FROM ubuntu:24.04
+FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
 USER root
 RUN apt update && apt upgrade -y
 
@@ -17,6 +17,7 @@ RUN apt update && apt install git ffmpeg libsm6 libxext6 xvfb python3 python3-ve
 
 # Create Python venv & install dependencies
 RUN python3 -m venv /opt/venv
+RUN chmod -R 777 /opt/venv
 COPY requirements.txt /tmp/
 RUN /opt/venv/bin/pip install -r /tmp/requirements.txt
 ENV PATH="/opt/venv/bin:$PATH"
