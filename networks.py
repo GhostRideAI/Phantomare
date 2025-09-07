@@ -332,14 +332,18 @@ class WorldModel(nn.Module):
         # Encode observations
         enc = self._forward_encoders(obs)
         # remove last dimension of continues
-        continues = continues.squeeze(-1)
+        continues.squeeze_(-1)
+        # Adjust dimension order to (T,B,*)
+        enc.transpose_(0,1)
+        actions.transpose_(0,1)
+        continues.transpose_(0,1)
         # Perform autoregression
         # NOTE: Torch scan is slow and doesn't like dynamic shapes :(
         #_, (recurrents, states, posteriors, posterior_logits) = torch_scan(
-        #    self._autoregress_step, h_t, (enc, actions, continues), dim=1)
+        #    self._autoregress_step, h_t, (enc, actions, continues))
         (recurrents, states, posteriors, posterior_logits
          ) = self._autoregress(enc, actions, continues, h_t)
-        # Re-adjust dimension order to (B,T,*)
+        # Re-adjust dimension order back to (B,T,*)
         recurrents = recurrents.transpose(0,1)
         states = states.transpose(0,1)
         posteriors = posteriors.transpose(0,1)
@@ -366,41 +370,39 @@ class WorldModel(nn.Module):
         # Form the current state s_t
         s_t = torch.cat((h_t, z_t.flatten(-2)), -1)
         # Save off current recurrent hidden state
-        h_now = h_t.clone()
+        h_now = torch.empty_like(h_t).copy_(h_t)
         # Calculate the next recurrent hidden state h_t+1 where continuing
         za_t = torch.cat((z_t.flatten(-2), a_t), -1)
         h_t[c_t] = self.sequence_net(za_t[c_t], h_t[c_t])
-        h_t = self.sequence_net(za_t, h_t)
         # Reset hidden states where done
-        d_t = ~c_t
-        h_t[d_t] = self._get_inital_recurrent_state(d_t.sum())
+        d_t = ~c_t; h_t[d_t] = self._get_inital_recurrent_state(d_t.sum())
         # Form y @ timestep t
         y_t = (h_now, s_t, z_t, posterior_distribution_t.base_dist.logits)
         return h_t, y_t
  
     def _autoregress(self, enc: Tensor, actions: Tensor, continues: Tensor, h_t: Tensor) -> tuple[Tensor]:
         # Initialize lists for storing step results
-        (posterior_logits, states,
-         posteriors, recurrents) = [], [], [], []
+        (recurrents, states, posteriors,
+         posterior_logits) = [], [], [], []
         # For each timestep...
-        for enc_t, a_t, c_t in zip(enc.transpose(0,1), actions.transpose(0,1), continues.transpose(0,1)):
-            # Calculate the posterior distribution logits
-            posterior_distribution_t = self.representation_net(torch.cat((enc_t, h_t), -1))
+        for enc_t, a_t, c_t in zip(enc, actions, continues):
+            # Calculate the posterior distribution
+            posterior_distribution_t = self.representation_net(
+                torch.cat((enc_t, h_t), -1))
             z_t = posterior_distribution_t.rsample()
             # Form the current state s_t
             s_t = torch.cat((h_t, z_t.flatten(-2)), -1)
             # Record step calculations
+            recurrents += [h_t]
             states += [s_t]
             posteriors += [z_t]
             posterior_logits += [posterior_distribution_t.base_dist.logits]
-            recurrents += [h_t]
             # Calculate the next recurrent hidden state h_t+1 where continuing
             za_t = torch.cat((z_t.flatten(-2), a_t), -1)
             h_t[c_t] = self.sequence_net(za_t[c_t], h_t[c_t])
             # Reset hidden states where done
-            d_t = ~c_t
-            h_t[d_t] = self._get_inital_recurrent_state(d_t.sum())
-        # Combine sequences/create posterior distribution
+            d_t = ~c_t; h_t[d_t] = self._get_inital_recurrent_state(d_t.sum())
+        # Combine sequences
         recurrents = torch.stack(recurrents)
         states = torch.stack(states)
         posteriors = torch.stack(posteriors)
@@ -422,8 +424,9 @@ class WorldModel(nn.Module):
             action_distribution_t = actor(s_t.detach())
             if exploit: a_t = action_distribution_t.mode
             else: a_t = action_distribution_t.rsample()
+            # Calculate the next recurrent
+            #   vector when taking action a_t
             za_t = torch.cat((z_t, a_t), -1)
-            # Calculate the next recurrent vector
             h_t = self.sequence_net(za_t, h_t)
             # Calculate the current *prior* latent state
             prior_distribution_t = self.dynamics_net(h_t)
