@@ -83,7 +83,7 @@ data_module:
   dataloader_args: {num_workers: 8}
   # The spec for the replay buffer to use
   replay_buffer:
-    torchrl.data.TensorDictReplayBuffer:
+    torchrl.data.ReplayBuffer:
       storage:
         utils.CompressedStorage: {max_size: 1000000}
   # The Data Collector to use for data collection from environment

@@ -1,7 +1,7 @@
 # Lit Module Settings
 lit_module:
   # When true, JIT-compiles lit-module code into optimized kernels via torch.compile
-  compile: false
+  compile: false 
   # (time steps trained on) / (time step collected from the environment, without action repeat)
   replay_ratio: 64
   # Arguments to be passed to the logger callback
@@ -94,12 +94,12 @@ data_module:
         #torchrl.data.replay_buffers.ListStorage: {max_size: 10000}
   # The Data Collector to use for data collection from environment
   data_collector:
-    data.ConcurrentDataCollector:
-    #data.DataCollector:
+    #data.ConcurrentDataCollector:
+    data.DataCollector:
       environment_args: {gym_name: MountainCarContinuous-v0}
-      agent_args: {action_repeat: 1}
+      agent_args: {action_repeat: 1, device: cuda, dtype: torch.float16}
       agent_update_freq: 1
-      n_workers: 1
+      #n_workers: 1
   # Optional replay buffer ckpt (directory) to load at the start of training
   replay_buffer_ckpt: null
   # The number of samples to collect before training begins
@@ -118,7 +118,7 @@ runner:
   # Arguments to provide to the PyTorch Lightning Trainer (https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api)
   ptl_trainer_args:
     max_steps: 50
-    precision: bf16
+    precision: transformer-engine-float16
     log_every_n_steps: 100
     benchmark: true
     # Callbacks to use during training. (https://lightning.ai/docs/pytorch/stable/api_references.html#callbacks)
