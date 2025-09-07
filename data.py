@@ -39,6 +39,7 @@ class DataCollector:
         self._agent_args = agent_args
         self.env = Environment(**environment_args.to_dict())
         self.agent = Agent(self.env, policy, **agent_args.to_dict())
+        self.device = self.agent.device
         self.action_repeat = self.agent.action_repeat
         self._current_observation, _ = self.agent.reset()
         self._current_experience = {'observations': [], 'actions': [],
@@ -152,6 +153,7 @@ class ConcurrentDataCollector:
         self._agent_update_freq = agent_update_freq
         self._environment_args = environment_args
         self._agent_args = agent_args
+        self.device = agent_args['device'] if 'device' in agent_args else 'cpu'
         self.n_workers = n_workers
         self.processes = []
         self.is_running = False
