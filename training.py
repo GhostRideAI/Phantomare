@@ -59,8 +59,9 @@ class LitModule(ptl.LightningModule):
         self.agent_steps_per_grad_step = batch_agent_steps // replay_ratio
         self._next_grad_step = self.agent_steps_per_grad_step
         # Share model with DataCollector
-        self._wm4dc = copy.deepcopy(self.net.world_model).to('cpu')
-        self._actor4dc = copy.deepcopy(self.net.actor).to('cpu')
+        agent_device = self.trainer.datamodule.data_collector.agent.device
+        self._wm4dc = copy.deepcopy(self.net.world_model).to(agent_device)
+        self._actor4dc = copy.deepcopy(self.net.actor).to(agent_device)
         self._wm4dc.share_memory()
         self._actor4dc.share_memory()
         self.trainer.datamodule.data_collector.update_policy(
@@ -109,6 +110,7 @@ class LitModule(ptl.LightningModule):
         # (0) Prepare for Step
         observations, actions, continues = (
             batch['observations'], batch['actions'], batch['continues'])
+        observations.auto_batch_size_(2)
         world_model_opt, actor_opt, critic_opt = self.optimizers()
         # HACK: https://github.com/Lightning-AI/pytorch-lightning/issues/17958
         world_model_opt._on_before_step = lambda : self.trainer.profiler.start("optimizer_step")
