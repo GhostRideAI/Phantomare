@@ -83,7 +83,8 @@ class Environment:
             super().__init__(env)
 
         def action(self, action: Tensor) -> NDArray:
-            action = action.squeeze(0).cpu().numpy()
+            action = action.squeeze(0).to(
+               torch.float32).cpu().numpy()
             l = self.action_space.low
             h = self.action_space.high
             action = (h - l) * (action + 1)/2 + l
@@ -96,12 +97,13 @@ class Environment:
 class Agent:
 
     def __init__(self, env: Environment, policy: str | tuple[nn.Module],
-                 device: str = 'cpu', action_repeat: int = 1, 
-                 expl_noise: float = 0.0) -> None:
+                 device: str = 'cpu', dtype: str='torch.float32',
+                 action_repeat: int = 1, expl_noise: float = 0.0) -> None:
         self.env = env
         self.action_repeat = action_repeat
         self.expl_noise = expl_noise
         self.device = torch.device(device)
+        self.dtype = eval(dtype)
         self.current_return = 0.0
         self.update_policy(policy)
 
@@ -139,10 +141,10 @@ class Agent:
     def _nn_policy(self, observation: TensorDict, exploit: bool) -> Tensor:
         if not hasattr(self, 'h_t'):
             self.h_t = self._world_model._get_inital_recurrent_state(1)
-        observation = observation.to(device=self.device)
+        observation = observation.to(device=self.device, dtype=self.dtype)
         for name, obs in observation.items():
             if obs.dtype == torch.uint8:
-                observation[name] = obs.to(dtype=torch.float32) / 255.0
+                observation[name] = (obs.to(torch.float32) / 255.0).to(dtype=self.dtype)
         state, posterior = self._world_model.encode_state(observation, self.h_t, exploit)
         action_dist = self._actor(state)
         if exploit: action = action_dist.mode
@@ -150,6 +152,7 @@ class Agent:
             action = action_dist.rsample()
             if self.expl_noise:
                 action = td.Normal(action, self.expl_noise).rsample().clamp(-1,1)
+        action = action.to(self.dtype)
         za = torch.cat((posterior, action), -1)
         self.h_t = self._world_model.sequence_net(za, self.h_t)
         return action
